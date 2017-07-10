@@ -16,7 +16,7 @@
 sig_mult = 0        # Threshold sigma value over which edge of Keplerian profile is fitted to
 #
 kep_fit = True    # Choose whether to ***fit*** Keplerian profiles to PV data, to compute kinematic mass
-kep_plot = False     # Choose whether to ***plot*** Keplerian profiles (raw or fitted) onto PV diagram
+kep_plot = True     # Choose whether to ***plot*** Keplerian profiles (raw or fitted) onto PV diagram
 ana_kep = False   # Choose whether to over plot analytic Keplerian profile on PV plot
 #
 fit_start = 0        # Index of radial bins that fitting starts at (if kep_fit == "TRUE")
@@ -34,6 +34,9 @@ isotherm = False      # If intensity is True, choose whether to use actual, or i
 #
 Jynorm = True          # If called for, show plot in terms of Jy/beam
 Jy = 1.e26           # milli-Jansky value
+beam = 2 # 1 = PV bin for beam ; 2 = circular delt_r for beam ; 3 = assume ALMA ang. res. = 0.2" for beam
+#
+checkJy = True          # Check whether mJy scale relates to velocity integrated 1D profile
 #
 #
 # = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
@@ -48,6 +51,7 @@ import matplotlib.pyplot as plt
 from matplotlib import rcParams
 rcParams['ps.fonttype'] = 42
 import scipy
+from matplotlib import cm
 #
 #
 # = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
@@ -406,8 +410,15 @@ def pv(dat_dir, plotdir, ea_run, snaparr, v_K, inclin, r, vkep, pmass, EA_lenref
         lam = 1.3e-3            # Assumed lambda value, equivalent to ALMA band 6
         nu = 230.e9             # As above, for frequency
         kappa_lam = 2.3 * cgsSIopac      # Assumed opacity for disc, in cgs, converted to SI
-        bin_area = (delt_r*(AUm)) * ( (y_max-y_min) * (AUm))    # area in m^2
-        delt_omega = bin_area / dist**2.     # Solid angle for resolved area (SI)
+        if beam == 1:       # Select beam to normalise flux to - see variables for choices
+            bin_area = (delt_r*(AUm)) * ( (y_max-y_min) * (AUm))    # area in m^2
+            delt_omega = bin_area / dist**2.                        # Solid angle for resolved area (SI)
+        elif beam == 2:
+            bin_area = (delt_r*(AUm))**2.
+            delt_omega = bin_area / dist**2.
+        elif beam == 3:
+            bin_area = (delt_r*(AUm)) * ( (y_max-y_min) * (AUm))    # area in m^2
+            delt_omega = 1.85e-11 * (0.2)**2.
         gas_pmass = part_mass * Msol_kg            # gas particle mass in kg
         B_nu = []              # Blank array for spectral irradiance values to be filled in flux PV diagrams
 #
@@ -436,7 +447,7 @@ def pv(dat_dir, plotdir, ea_run, snaparr, v_K, inclin, r, vkep, pmass, EA_lenref
 #
         if (intensity is True) and (isotherm is False):
 #
-            print np.mean(temp_bin), min(temp_bin), max(temp_bin)
+#            print np.mean(temp_bin), min(temp_bin), max(temp_bin)
 #
             for ii in range(0, len(count_bin)):
                 B_nu.append(( (2. * h * nu**3. ) / c**2. ) * \
@@ -464,7 +475,7 @@ def pv(dat_dir, plotdir, ea_run, snaparr, v_K, inclin, r, vkep, pmass, EA_lenref
                     sd_dust = ( (count_bin[j]*gas_pmass) / bin_area ) * d_to_g
 #
                     if Jynorm is True:
-                        zaxis.append(  B_nu[j] * kappa_lam * sd_dust * Jy * delt_omega )
+                        zaxis.append(   B_nu[j] * kappa_lam * sd_dust * Jy * delt_omega )
                     else:
                         zaxis.append( B_nu[j] * Jerg * cm2m2 * kappa_lam * sd_dust * delt_omega)
 #
@@ -480,6 +491,39 @@ def pv(dat_dir, plotdir, ea_run, snaparr, v_K, inclin, r, vkep, pmass, EA_lenref
 #
         zaxis = np.log10(np.array(zaxis))
 #        zaxis = np.array(zaxis)
+#
+    # Run check to see whether mJy scale is appropriate, by comparing to integrated velocity
+    # i.e. 1D spatial flux density
+
+        if checkJy == True:
+#
+            nr = int( ( 2. * r_range )  / delt_r ) ; nv = int ( ( 2*v_range ) / delt_v )
+            count_int = np.array( [0.] * nr ) ; SD_int = np.array( [0.] * nr )
+            T_int = np.array( [0.] * nr ) ; B_nu_int = np.array( [0.] * nr )
+            r_int = np.array( [0.] * nr ) ; F_int = np.array( [0.] * nr )
+#
+            ind = 0
+            for a in range( nr ):
+                r_int[a] = ( a * delt_r ) + 0.5*delt_r - r_range
+                for b in range( nv ):
+                    count_int[a] = count_int[a] + count_bin[ind]
+                    T_int[a] = T_int[a] + temp_bin[ind]
+                    ind += 1
+#
+                SD_int[a] = ( (count_int[a]*gas_pmass) / bin_area ) * d_to_g
+                T_int[a] = T_int[a] / nv
+                B_nu_int[a] = ( (2. * h * nu**3. ) / c**2. ) * \
+                   ( 1. / (math.exp( (h*nu) / (kb * T_int[a]) ) - 1.) )
+#
+                F_int[a] =  B_nu_int[a] * kappa_lam * SD_int[a] * Jy * delt_omega
+#
+            if (ea_run == 3) and (i == 7) :
+                plt.plot(r_int, F_int)
+                plt.xscale('log') ; plt.yscale('log')
+                plt.xlabel('log Radius (AU)') ; plt.ylabel('log Flux Density (mJy/beam)')
+                plt.savefig(plotdir+'Fdens_1D'+'.'+str(plot_form), format=str(plot_form), dpi=150)
+                plt.clf()
+#
 #
 # = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
     # Plotting of PV diagram
@@ -500,7 +544,7 @@ def pv(dat_dir, plotdir, ea_run, snaparr, v_K, inclin, r, vkep, pmass, EA_lenref
         ax1 = plt.subplot(111)
         plt.imshow(zi, vmin=zmin, vmax=zmax, origin='lower', \
            extent=[r_bin.min(), r_bin.max(), vz_bin.min(), vz_bin.max()], \
-           aspect = 'auto')
+           aspect = 'auto',cmap=cm.jet)
 #
     # Overplot Keplerian fits to data, plotting points fitted to if chosen
 #
@@ -535,22 +579,22 @@ def pv(dat_dir, plotdir, ea_run, snaparr, v_K, inclin, r, vkep, pmass, EA_lenref
                     linestyle = 'dashed', color = 'k')
 #
         if arrows is True:
-            if (ea_run == 5) and (i == 4) and isothermal is True:
+            if (ea_run == 5) and (i == 4) and isotherm is True:
                 ax1.arrow(-50., -7.5, 0., 5., head_width=5., head_length=1., fc='g', ec='g', width=2.)
                 ax1.arrow(40., 7.5, 0., -4.5, head_width=5., head_length=1., fc='g', ec='g', width=2.)
             if (ea_run == 5) and (i == 5):
                 ax1.arrow(-50., -7.5, 0., 4.5, head_width=5., head_length=1., fc='g', ec='g', width=2.)
-                ax1.arrow(-60., -7.5, 0., 3., head_width=5., head_length=1., fc='b', ec='b', width=2.)
+                ax1.arrow(-60., -7.5, 0., 3., head_width=5., head_length=1., fc='y', ec='y', width=2.)
                 ax1.arrow(40., 7.5, 0., -4.5, head_width=5., head_length=1., fc='g', ec='g', width=2.)
             if (ea_run == 5) and (i == 6):
                 ax1.arrow(-50., -7.5, 0., 5., head_width=5., head_length=1., fc='g', ec='g', width=2.)
-                ax1.arrow(-80., -7.5, 0., 3., head_width=5., head_length=1., fc='b', ec='b', width=2.)
+                ax1.arrow(-80., -7.5, 0., 3., head_width=5., head_length=1., fc='y', ec='y', width=2.)
                 ax1.arrow(50., 7.5, 0., -5., head_width=5., head_length=1., fc='g', ec='g', width=2.)
-                ax1.arrow(60., 7.5, 0., -3., head_width=5., head_length=1., fc='b', ec='b', width=2.)
+                ax1.arrow(60., 7.5, 0., -3., head_width=5., head_length=1., fc='y', ec='y', width=2.)
 #
         cbar = plt.colorbar()
         if Jynorm is True:
-            cbar.ax.set_ylabel('Log. F'+(r'$_\nu$')+' (Jy)')
+            cbar.ax.set_ylabel('Log. Flux (mJy/beam)')
         else:
             if intensity is True:
                 cbar.ax.set_ylabel('Log. Flux,'+' (erg '+(r'cm$^{-2}$')+')')

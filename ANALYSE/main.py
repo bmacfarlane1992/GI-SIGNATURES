@@ -14,7 +14,7 @@
 # = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = =
 #
 #
-arch_dir = "/Users/bmacfarlane1992/Documents/ACADEMIA_PHD/PROJECTS/GI-SIGNATURES/"    # Location of project directory architecture
+arch_dir = "/Users/bmacfarlane1992/PHD/PROJECTS/GI-SIGNATURES/"    # Location of project directory architecture
 dat_dir = "/Volumes/SD_bm1992/DATA/"            # Location of data from analyse_disc.f90
 ic_dir = "/Volumes/SD_bm1992/ICs/"              # Location of ICs to read in sink data
 plot_form = "png"								# Format of plots (either "eps" or "png")
